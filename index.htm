@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<!--
+To do:
+OK 1. Add the harmony processing
+OK 2. Add Panning to separate M&H
+3. Melody enhancements
+   a. ?Melody contains characteristic notes, as an optional selection criterion.
+      I think this means that those intervals need to be in the scale information.
+   b. Use the 4 note fragments with random application of operations such as chain, invert, reverse, compress/expand (intervals)
+
+4. Am I really interpreting the N-grams correctly, e.g. the 1st implied note.
+   Doesn't the signature matching assume 'C' as the base note?  If so, the notes need to be generated with 'C' as base note.
+   => ok as-is, I think.
+5. Add vocal range criteria for melody and harmony generation, as filter and for random octave transposition?
+WIP 6. What is the correct way to extend a melody fragment? "diatonic transposition".
+      A: Map the offsets to scale degrees, starting with base being the prev melody end?
+7. > 2 part harmony
+8. User workflow model, and also Proper technical flow - use **Vue**,React,Angular?
+    a. Choosing scale/tonic/mode will immediately display and play the scale.
+       And it will also choose a melody according to current melody options, display and play it.  Button is provided to choose another.
+    b. After a melody is generated, a harmony will be generated according to the current options, and will be displayed by not played.
+       Currently provided melody types are deterministic.  If at future non-deterministic are provided, a re-gen button will be provided.
+        (Consider Harmony-type 'any', and a regen button to choose among them randomly).
+    c. Harmony section has a play M, H, H+M.
+       Consider how to generalize to multiple harmony.
+
+-->
+<html>
+<head>
+<title>***Harmony Trainer</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.6/Tone.js"></script>
+
+<script src="3P/abcjs-basic.js"></script>
+
+<script src="https://cdn.jsdelivr.net/npm/vue@2.6.12/dist/vue.js"></script>
+<!--
+<script src="https://gitcdn.link/repo/Sojourneer/teoria/master/teoria.js"></script>
+-->
+<script src="../../teoria/teoria.js"></script>
+
+
+<script src="noteseq.js"></script>
+<script src="harmonyTrainer.js"></script>
+
+<!-- not using
+<script src="https://cdn.jsdelivr.net/npm/@tonaljs/tonal/browser/tonal.min.js"></script>
+<script>
+  console.log(Tonal.Key.minorKey("Ab"));
+</script>
+-->
+
+<script>data = {};</script>
+<script src="data/all-4.json"></script>
+<script src="data/all-8.json"></script>
+<script src="data/all-12.json"></script>
+
+<script src="data/scales.js"></script>
+
+<style>
+html,body { width:100%; height:100%; }
+.notation { height:100px; width:45% }
+#editor { width:100%; height:520px; border:1px solid red}
+
+#buttonRow { height:30px; line-height:30px; margin-left:10px; }
+.VR { border-left:3px solid black; }
+.button { padding-left:10px; padding-right:10px; border:1px solid black; border-radius:20px; box-sizing: border-box;
+     text-align:center; valign:middle; line-height:30px; margin:5px; }
+.button:hover { background: aqua; cursor:pointer }
+
+#generate {  }
+#play {  }
+#playScale {  }
+
+.label { margin-left:5px; margin-right:5px; font-weight:bold }
+
+.abcjs-v1 { fill-opacity: 0.9; fill:gray; }
+.abcjs-chord { font-style:italic }
+</style>
+</head>
+
+<body onload="InitApp()">
+
+<script src="app.js"></script>
+<div id="app1">
+<h1>{{ Title }}</h1>
+{{ melody.test }}
+<div id="buttonRow">
+    <span class="VR"/> <!-- Tonality -->
+    <span class="label">Tonality: </span>
+    <label for="tonic">Tonic</label>
+    <select id="selTonic" v-model="tonality.tonic">
+        <option v-for="name in tonality.tonics" :key="name" v-bind:value="name">{{ name }}</option>
+    </select>
+
+    <label for="selScale">Scale</label>
+    <select id="selScale" v-model="tonality.scaleName">
+        <option v-for="name in tonality.scaleNames" :key="name" v-bind:value="name">{{ name }}</option>
+    </select>
+
+    <label for="selMode">Mode</label>
+    <select id="selMode" v-model="tonality.modeName">
+        <option v-for="name in tonality.modeNames" :key="name" v-bind:value="name">{{ name }}</option>
+    </select>
+</div>
+
+<div id="buttonRow">
+    <span class="VR"/> <!-- melody fragment -->
+    
+    <span class="label">Melody: </span>
+    <label for="noteCount">Note count:</label>
+    <input id="noteCount" type="number" min="0" max="12" v-model="melody.nCount" XonChange="changeMelodyOptions(this)"/>
+    
+    <label for="pLeap">Percent Leaps:</label>
+    <input id="pLeap" type="number" min="0" max="100" v-model="melody.percentLeaps" XonChange="changeMelodyOptions(this)"/>
+
+    <label for="nChromatics"># of chromatics:</label>
+    <input id="nChromatics" type="number" min="0" max="100" v-model="melody.nChromatics" XonChange="changeMelodyOptions(this)"/>
+    
+    <span id="generateMelody" class="button" v-on:click="regenerate_melody">Generate</span>
+</div>
+
+<div id="buttonRow">
+    <span class="VR"/> <!-- harmony fragment -->
+
+    <span class="label">Harmony: </span>
+    <label for="harmonyType">Type:</label>
+    <select id="harmonyType" v-model="harmony.type">
+        <option v-for="ht in harmony.types" :key="ht.name" v-bind:value="ht">{{ ht.name }}</option>
+    </select>
+
+    <span class="VR"/>
+
+    <span id="play" class="button" onclick="playSM(0.5, app.harmony.sequence.notes)">play Harmony</span>
+    <span id="play" class="button" onclick="playSM(0.5, app.melody.sequence.notes, app.harmony.sequence.notes)">play M+H</span>
+</div>
+
+<table>
+    <tr>
+        <td style="width:30px">
+            <span id="playScale" class="button" onclick="playScale()">Play</span>
+        </td>
+        <td>
+            <span id="notation1" class="notation"></span>
+        </td>
+    </tr>
+</table>
+<table>
+    <tr>
+        <td style="width:30px">
+            <span id="playMelody" class="button" onclick="playSM(0.5,app.melody_sequence.notes)">M</span>
+            <span class="playHarmony button" onclick="playSM(0.5, app.harmony.sequence.notes)">H1</span>
+   <span class="button" onclick="playScale(); playSM(0.5, app.melody_sequence.notes)">Test</span>
+            <span class="playHarmony button" onclick="">H2</span>
+        </td>
+        <td>
+            <span id="notation2" class="notation"></span>
+        </td>
+    </tr>
+</table>
+
+{{ melody_sequence }}
+{{ harmony_sequence }}
+</div>
+
+</body>
+
+</html>
